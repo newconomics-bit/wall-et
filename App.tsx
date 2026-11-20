@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { StyleSheet, Text, TouchableOpacity, View, AppState } from 'react-native';
+import * as ScreenCapture from 'expo-screen-capture';
 
 import { SecurityGate, PrivacyOverlay } from '@/components/security/SecurityGate';
 import { AppNavigator } from '@/navigation/AppNavigator';
@@ -15,6 +16,7 @@ export default function App() {
     toggleBalanceHidden,
     isLocked,
     isOnboardingComplete,
+    secureCapture,
   } = useSecurityStore();
 
   const [theme, setTheme] = useState<ThemeName>('dark');
@@ -29,6 +31,15 @@ export default function App() {
   useEffect(() => {
     initializeSecurity();
   }, []);
+
+  // FLAG_SECURE: apply/release screen capture protection based on secureCapture setting
+  useEffect(() => {
+    if (secureCapture) {
+      ScreenCapture.preventScreenCaptureAsync();
+    } else {
+      ScreenCapture.allowScreenCaptureAsync();
+    }
+  }, [secureCapture]);
 
   // AppState listener untuk privacy overlay - harus sinkron di root level
   useEffect(() => {

@@ -27,6 +27,9 @@ export type SecurityState = {
   // Balance privacy
   isBalanceHidden: boolean;
 
+  // FLAG_SECURE (prevent screenshot/recording)
+  secureCapture: boolean;
+
   // Lock & onboarding
   isLocked: boolean;
   isOnboardingComplete: boolean;
@@ -42,6 +45,7 @@ export type SecurityState = {
   setBiometric: (enabled: boolean) => void;
   setBiometricAvailable: (available: boolean) => void;
   toggleBalanceHidden: () => void;
+  setSecureCapture: (enabled: boolean) => void;
   setOnboardingComplete: (complete: boolean) => void;
   clearAll: () => Promise<void>;
 };
@@ -75,6 +79,7 @@ export const useSecurityStore = create<SecurityState>()(
       biometricEnabled: false,
       biometricAvailable: false,
       isBalanceHidden: false,
+      secureCapture: true, // default ON per requirement
       isLocked: false,
       isOnboardingComplete: false,
 
@@ -125,6 +130,10 @@ export const useSecurityStore = create<SecurityState>()(
         set((prev) => ({ isBalanceHidden: !prev.isBalanceHidden }));
       },
 
+      setSecureCapture: (enabled) => {
+        set({ secureCapture: enabled });
+      },
+
       setOnboardingComplete: (complete) => {
         set({ isOnboardingComplete: complete });
       },
@@ -153,6 +162,7 @@ export const useSecurityStore = create<SecurityState>()(
         biometricEnabled: state.biometricEnabled,
         biometricAvailable: state.biometricAvailable,
         isBalanceHidden: state.isBalanceHidden,
+        secureCapture: state.secureCapture,
         isLocked: state.isLocked,
         isOnboardingComplete: state.isOnboardingComplete,
       }),
