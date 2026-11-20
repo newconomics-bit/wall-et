@@ -4,7 +4,8 @@
  */
 
 import React from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, SafeAreaView } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 import { getTokens, type ThemeName } from '@/theme/tokens';
@@ -26,7 +27,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: tokens.background }]}>
-      <View style={styles.header}>
+      <View style={[styles.header, { borderBottomColor: tokens.border }]}>
         <Text style={[styles.brand, { color: tokens.text }]}>wall-et</Text>
         <View style={styles.headerActions}>
           <TouchableOpacity
@@ -65,7 +66,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: '#232E3F',
   },
   brand: {
     fontSize: 20,

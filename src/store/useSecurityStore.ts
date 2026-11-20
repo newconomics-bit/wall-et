@@ -11,13 +11,16 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 import * as Crypto from 'expo-crypto';
 
+export const MAX_PIN_ATTEMPTS = 5;
+export const PIN_COOLDOWN_MS = 60 * 1000;
+
 export type SecurityState = {
   // PIN (terpisah dari state biasa, di SecureStore)
   pinHash: string | null;
   pinSalt: string | null;
 
   // Attempts & cooldown
-  pinAttempts: integer;
+  pinAttempts: number;
   lockUntil: number | null; // timestamp ms
 
   // Biometric
@@ -34,8 +37,12 @@ export type SecurityState = {
   isLocked: boolean;
   isOnboardingComplete: boolean;
 
+  // Readiness (tidak di-persist): AsyncStorage & SecureStore sudah terbaca
+  isHydrated: boolean;
+  isSecureLoaded: boolean;
+
   // Actions
-  setPin: (hash: string, salt: string) => void;
+  setPin: (hash: string, salt: string) => Promise<void>;
   generateSalt: () => Promise<string>;
   hashPin: (pin: string, salt: string) => Promise<string>;
   verifyPin: (pin: string) => Promise<boolean>;
@@ -47,11 +54,10 @@ export type SecurityState = {
   toggleBalanceHidden: () => void;
   setSecureCapture: (enabled: boolean) => void;
   setOnboardingComplete: (complete: boolean) => void;
+  setHydrated: (hydrated: boolean) => void;
+  setSecureLoaded: (loaded: boolean) => void;
   clearAll: () => Promise<void>;
 };
-
-// Type alias karena TS tidak kenal `integer` bawaan
-type integer = number;
 
 // SecureStore keys
 const SECURE_PIN_HASH = 'wall-et_pin_hash';
@@ -82,11 +88,17 @@ export const useSecurityStore = create<SecurityState>()(
       secureCapture: true, // default ON per requirement
       isLocked: false,
       isOnboardingComplete: false,
+      isHydrated: false,
+      isSecureLoaded: false,
 
-      setPin: (hash, salt) => {
+      setPin: async (hash, salt) => {
+        // Tulis ke SecureStore DULU: jangan pernah menandai onboarding selesai
+        // sebelum PIN benar-benar tersimpan (kalau proses mati, PIN tidak hilang).
+        await Promise.all([
+          SecureStore.setItemAsync(SECURE_PIN_HASH, hash),
+          SecureStore.setItemAsync(SECURE_PIN_SALT, salt),
+        ]);
         set({ pinHash: hash, pinSalt: salt });
-        SecureStore.setItemAsync(SECURE_PIN_HASH, hash);
-        SecureStore.setItemAsync(SECURE_PIN_SALT, salt);
       },
 
       generateSalt,
@@ -100,13 +112,14 @@ export const useSecurityStore = create<SecurityState>()(
       },
 
       incrementAttempts: () => {
-        const { pinAttempts } = get();
-        const next = pinAttempts + 1;
-        if (next >= 5) {
-          const lockUntil = Date.now() + 60 * 1000; // 60 detik cooldown
-          set({ pinAttempts: next, lockUntil });
+        const { pinAttempts, lockUntil } = get();
+        // Cooldown sebelumnya sudah lewat → mulai hitungan baru dari 0.
+        const base = lockUntil !== null && Date.now() >= lockUntil ? 0 : pinAttempts;
+        const next = base + 1;
+        if (next >= MAX_PIN_ATTEMPTS) {
+          set({ pinAttempts: next, lockUntil: Date.now() + PIN_COOLDOWN_MS });
         } else {
-          set({ pinAttempts: next });
+          set({ pinAttempts: next, lockUntil: null });
         }
       },
 
@@ -138,17 +151,28 @@ export const useSecurityStore = create<SecurityState>()(
         set({ isOnboardingComplete: complete });
       },
 
+      setHydrated: (hydrated) => {
+        set({ isHydrated: hydrated });
+      },
+
+      setSecureLoaded: (loaded) => {
+        set({ isSecureLoaded: loaded });
+      },
+
       clearAll: async () => {
-        await SecureStore.deleteItemAsync(SECURE_PIN_HASH);
-        await SecureStore.deleteItemAsync(SECURE_PIN_SALT);
+        await Promise.all([
+          SecureStore.deleteItemAsync(SECURE_PIN_HASH),
+          SecureStore.deleteItemAsync(SECURE_PIN_SALT),
+        ]);
         set({
           pinHash: null,
           pinSalt: null,
           pinAttempts: 0,
           lockUntil: null,
           biometricEnabled: false,
-          biometricAvailable: false,
+          // biometricAvailable = kapabilitas hardware, bukan data user.
           isBalanceHidden: false,
+          secureCapture: true,
           isLocked: false,
           isOnboardingComplete: false,
         });
@@ -157,7 +181,8 @@ export const useSecurityStore = create<SecurityState>()(
     {
       name: 'wall-et-security',
       storage: createJSONStorage(() => AsyncStorage),
-      // PIN hash/salt di SecureStore (terpisah), jangan di zustand persist
+      // PIN hash/salt di SecureStore (terpisah), jangan di zustand persist.
+      // isHydrated/isSecureLoaded sengaja tidak di-persist (hanya status sesi).
       partialize: (state) => ({
         biometricEnabled: state.biometricEnabled,
         biometricAvailable: state.biometricAvailable,
@@ -165,19 +190,29 @@ export const useSecurityStore = create<SecurityState>()(
         secureCapture: state.secureCapture,
         isLocked: state.isLocked,
         isOnboardingComplete: state.isOnboardingComplete,
+        // Cooldown ikut di-persist supaya restart app tidak menghapus cooldown.
+        pinAttempts: state.pinAttempts,
+        lockUntil: state.lockUntil,
       }),
+      onRehydrateStorage: () => () => {
+        useSecurityStore.getState().setHydrated(true);
+      },
     }
   )
 );
 
-// Inisialisasi: ambil PIN hash/salt dari SecureStore saat pertama kali load
+// Inisialisasi: ambil PIN hash/salt dari SecureStore saat pertama kali load.
+// Catatan: jangan tulis balik ke SecureStore di sini (cukup hydrate state).
 export const initializeSecurity = async () => {
-  const store = useSecurityStore.getState();
-  const [hash, salt] = await Promise.all([
-    SecureStore.getItemAsync(SECURE_PIN_HASH),
-    SecureStore.getItemAsync(SECURE_PIN_SALT),
-  ]);
-  if (hash && salt) {
-    store.setPin(hash, salt);
+  try {
+    const [hash, salt] = await Promise.all([
+      SecureStore.getItemAsync(SECURE_PIN_HASH),
+      SecureStore.getItemAsync(SECURE_PIN_SALT),
+    ]);
+    if (hash && salt) {
+      useSecurityStore.setState({ pinHash: hash, pinSalt: salt });
+    }
+  } finally {
+    useSecurityStore.getState().setSecureLoaded(true);
   }
 };

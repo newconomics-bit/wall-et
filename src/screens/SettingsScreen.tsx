@@ -1,29 +1,49 @@
 /**
  * Settings Screen — wall-et
- * Toggle: Tema, Sembunyikan Saldo, Kunci thumbnail recent apps (FLAG_SECURE).
+ * Toggle: Tema, Sembunyikan Saldo, Biometrik, Kunci thumbnail recent apps (FLAG_SECURE).
  */
 
 import React from 'react';
-import { StyleSheet, Text, TouchableOpacity, View, SafeAreaView, Switch } from 'react-native';
+import { StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 import { getTokens, type ThemeName } from '@/theme/tokens';
 import { useSecurityStore } from '@/store/useSecurityStore';
 
 type SettingsScreenProps = {
   theme: ThemeName;
+  toggleTheme: () => void;
+  onBack: () => void;
 };
 
-export const SettingsScreen: React.FC<SettingsScreenProps> = ({ theme }) => {
+export const SettingsScreen: React.FC<SettingsScreenProps> = ({ theme, toggleTheme, onBack }) => {
   const tokens = getTokens(theme);
   const {
     isBalanceHidden,
     toggleBalanceHidden,
     secureCapture,
     setSecureCapture,
+    biometricEnabled,
+    biometricAvailable,
+    setBiometric,
   } = useSecurityStore();
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: tokens.background }]}>
+      <View style={[styles.header, { borderBottomColor: tokens.border }]}>
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={onBack}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          accessibilityRole="button"
+          accessibilityLabel="Kembali"
+        >
+          <MaterialCommunityIcons name="arrow-left" size={22} color={tokens.accent} />
+        </TouchableOpacity>
+        <Text style={[styles.headerTitle, { color: tokens.text }]}>Settings</Text>
+      </View>
+
       <View style={styles.content}>
         <Text style={[styles.sectionTitle, { color: tokens.textMuted }]}>TAMPILAN</Text>
 
@@ -36,14 +56,13 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ theme }) => {
           </View>
           <Switch
             value={theme === 'light'}
-            onValueChange={() => {}}
-            disabled
+            onValueChange={toggleTheme}
             trackColor={{ false: tokens.border, true: tokens.accent }}
             thumbColor={theme === 'dark' ? tokens.textMuted : tokens.accent}
           />
         </View>
 
-        <View style={styles.divider} />
+        <View style={[styles.divider, { backgroundColor: tokens.border }]} />
 
         <View style={styles.settingRow}>
           <View style={styles.settingInfo}>
@@ -60,17 +79,41 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ theme }) => {
           />
         </View>
 
-        <View style={styles.divider} />
+        <View style={[styles.divider, { backgroundColor: tokens.border }]} />
 
         <Text style={[styles.sectionTitle, { color: tokens.textMuted }]}>KEAMANAN</Text>
 
         <View style={styles.settingRow}>
           <View style={styles.settingInfo}>
-            <Text style={[styles.settingTitle, { color: tokens.text }]}>Kunci thumbnail recent apps</Text>
+            <Text style={[styles.settingTitle, { color: tokens.text }]}>Biometrik</Text>
+            <Text style={[styles.settingSub, { color: tokens.textMuted }]}>
+              {biometricAvailable
+                ? biometricEnabled
+                  ? 'Pembukaan dengan sidik jari/wajah aktif'
+                  : 'Pembukaan dengan sidik jari/wajah nonaktif'
+                : 'Perangkat tidak mendukung atau biometrik belum didaftarkan'}
+            </Text>
+          </View>
+          <Switch
+            value={biometricEnabled}
+            onValueChange={setBiometric}
+            disabled={!biometricAvailable}
+            trackColor={{ false: tokens.border, true: tokens.accent }}
+            thumbColor={biometricEnabled ? tokens.accent : tokens.textMuted}
+          />
+        </View>
+
+        <View style={[styles.divider, { backgroundColor: tokens.border }]} />
+
+        <View style={styles.settingRow}>
+          <View style={styles.settingInfo}>
+            <Text style={[styles.settingTitle, { color: tokens.text }]}>
+              Kunci thumbnail recent apps
+            </Text>
             <Text style={[styles.settingSub, { color: tokens.textMuted }]}>
               {secureCapture
-                ? 'Thumbnail recent apps dikosongkan (FLAG_SECURE aktif). Screenshot direkam normal.'
-                : 'Thumbnail recent apps menampilkan konten. Screenshot berfungsi normal.'}
+                ? 'Screenshot dan thumbnail recent apps diblokir (FLAG_SECURE aktif).'
+                : 'Screenshot dan thumbnail recent apps dapat direkam.'}
             </Text>
           </View>
           <Switch
@@ -88,6 +131,21 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ theme }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+  },
+  backButton: {
+    padding: 6,
+    marginRight: 8,
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '600',
   },
   content: {
     flex: 1,
@@ -120,7 +178,6 @@ const styles = StyleSheet.create({
   },
   divider: {
     height: 1,
-    backgroundColor: '#232E3F',
     marginHorizontal: -20,
   },
 });

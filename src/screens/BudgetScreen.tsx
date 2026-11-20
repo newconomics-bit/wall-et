@@ -4,7 +4,8 @@
  */
 
 import React from 'react';
-import { StyleSheet, Text, View, SafeAreaView } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { getTokens, type ThemeName } from '@/theme/tokens';
 

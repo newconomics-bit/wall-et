@@ -5,25 +5,25 @@
  * total ketik "HAPUS").
  */
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   AppState,
-  Dimensions,
   Platform,
   StyleSheet,
+  Switch,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
 import * as LocalAuthentication from 'expo-local-authentication';
-import * as SecureStore from 'expo-secure-store';
 import { BlurView } from 'expo-blur';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
-import { useSecurityStore } from '@/store/useSecurityStore';
-import { getTokens, type ThemeName } from '@/theme/tokens';
+import { useSecurityStore, MAX_PIN_ATTEMPTS } from '@/store/useSecurityStore';
+import { getTokens, type ThemeName, type ThemeTokens } from '@/theme/tokens';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const PIN_LENGTH = 6;
 const AUTO_LOCK_MS = 15 * 1000; // 15 detik
 const KEYPAD_SIZE = 48; // minimum 48dp untuk thumb-friendly
@@ -42,8 +42,6 @@ type PrivacyOverlayProps = {
 
 const PrivacyOverlay: React.FC<PrivacyOverlayProps> = ({ visible, theme }) => {
   if (!visible) return null;
-
-  const tokens = getTokens(theme);
 
   return (
     <BlurView
@@ -67,10 +65,10 @@ const PrivacyOverlay: React.FC<PrivacyOverlayProps> = ({ visible, theme }) => {
 
 // Keypad Numerik 3x4 (1-9, 0, backspace)
 const NumericKeypad: React.FC<{
-  value: string;
   onPressKey: (key: string) => void;
   disabled?: boolean;
-}> = ({ value, onPressKey, disabled }) => {
+  tokens: ThemeTokens;
+}> = ({ onPressKey, disabled, tokens }) => {
   const keys = [
     ['1', '2', '3'],
     ['4', '5', '6'],
@@ -92,17 +90,20 @@ const NumericKeypad: React.FC<{
                 key={keyIndex}
                 style={[
                   styles.keypadKey,
+                  { backgroundColor: tokens.card },
                   isBackspace && styles.keypadKeyBackspace,
                 ]}
                 onPress={() => !disabled && onPressKey(key)}
                 disabled={disabled}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel={isBackspace ? 'Hapus digit' : `Angka ${key}`}
               >
                 {isBackspace ? (
-                  <MaterialCommunityIcons name="backspace" size={24} color="#F8FAFC" />
+                  <MaterialCommunityIcons name="backspace" size={24} color={tokens.text} />
                 ) : (
-                  <Text style={styles.keypadKeyText}>{key}</Text>
+                  <Text style={[styles.keypadKeyText, { color: tokens.text }]}>{key}</Text>
                 )}
               </TouchableOpacity>
             );
@@ -117,131 +118,134 @@ export const SecurityGate: React.FC<SecurityGateProps> = ({ children, theme }) =
   const {
     pinHash,
     pinSalt,
-    pinAttempts,
     lockUntil,
     biometricEnabled,
     biometricAvailable,
     isLocked,
     isOnboardingComplete,
+    isHydrated,
+    isSecureLoaded,
     setPin,
     resetAttempts,
     setLock,
     setBiometric,
     setBiometricAvailable,
     setOnboardingComplete,
-    toggleBalanceHidden,
-    isBalanceHidden,
     clearAll,
   } = useSecurityStore();
 
-  const [appState, setAppState] = useState(AppState.currentState);
-  const [backgroundTime, setBackgroundTime] = useState<number | null>(null);
-  const [showOverlay, setShowOverlay] = useState(false);
-  const [showUnlock, setShowUnlock] = useState(false);
-  const [showOnboarding, setShowOnboarding] = useState(false);
+  const tokens = getTokens(theme);
+
+  const [pinSetup, setPinSetup] = useState(false);
   const [pinInput, setPinInput] = useState('');
+  const [firstPin, setFirstPin] = useState('');
   const [confirmPin, setConfirmPin] = useState('');
   const [onboardingStep, setOnboardingStep] = useState<'create' | 'confirm'>('create');
   const [error, setError] = useState<string | null>(null);
-  const [forgotMode, setForgotMode] = useState<'none' | 'biometric' | 'reset'>('none');
+  const [forgotMode, setForgotMode] = useState<'none' | 'reset'>('none');
   const [resetInput, setResetInput] = useState('');
   const [biometricLoading, setBiometricLoading] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
 
-  const tokens = getTokens(theme);
+  const coldStartHandled = useRef(false);
+  const backgroundAt = useRef<number | null>(null);
+  const lockTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Cek status onboarding & unlock saat mount
+  const isReady = isHydrated && isSecureLoaded;
+
+  // Status onboarding menentukan apakah layar buat PIN harus tampil.
   useEffect(() => {
-    if (!isOnboardingComplete) {
-      setShowOnboarding(true);
-      return;
-    }
-    if (isLocked) {
-      setShowUnlock(true);
-    }
-  }, [isOnboardingComplete, isLocked]);
+    setPinSetup(!isOnboardingComplete);
+  }, [isOnboardingComplete]);
 
-  // AppState listener: auto-lock & privacy overlay
-  // Overlay harus muncul SYNCHRONOUSLY saat background untuk mencegah snapshot
+  // Cold start: app yang sudah punya PIN harus terbuka dalam keadaan terkunci.
+  // Dijalankan sekali setelah state persisten + SecureStore siap.
+  useEffect(() => {
+    if (!isReady || coldStartHandled.current) return;
+    coldStartHandled.current = true;
+    if (isOnboardingComplete && pinHash && pinSalt) {
+      setLock(true);
+    }
+  }, [isReady, isOnboardingComplete, pinHash, pinSalt, setLock]);
+
+  // Deteksi ketersediaan biometrik (hardware + sudah terdaftar di perangkat).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [hasHardware, enrolled] = await Promise.all([
+          LocalAuthentication.hasHardwareAsync(),
+          LocalAuthentication.isEnrolledAsync(),
+        ]);
+        if (!cancelled) setBiometricAvailable(hasHardware && enrolled);
+      } catch {
+        if (!cancelled) setBiometricAvailable(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [setBiometricAvailable]);
+
+  // AppState listener: auto-lock HANYA jika background/inactive > 15 detik.
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextState) => {
-      setAppState(nextState);
-      const isBackground = nextState === 'background' || nextState === 'inactive';
+      const isAway = nextState === 'background' || nextState === 'inactive';
 
-      if (isBackground) {
-        setBackgroundTime(Date.now());
-        // Privacy overlay SEGERA (synchronous) saat background/inactive
-        setShowOverlay(true);
-        // Auto-lock setelah 15 detik
-        setTimeout(() => {
-          if (AppState.currentState === 'background' || AppState.currentState === 'inactive') {
-            setLock(true);
-            setShowUnlock(true);
-          }
+      if (isAway) {
+        if (backgroundAt.current === null) backgroundAt.current = Date.now();
+        if (lockTimer.current) clearTimeout(lockTimer.current);
+        lockTimer.current = setTimeout(() => {
+          lockTimer.current = null;
+          const store = useSecurityStore.getState();
+          if (store.isOnboardingComplete) store.setLock(true);
         }, AUTO_LOCK_MS);
-      } else {
-        setBackgroundTime(null);
-        setShowOverlay(false);
-        setShowUnlock(false);
-      }
-    });
-    return () => subscription.remove();
-  }, [setLock]);
-
-  // Jika ada cooldown aktif, biarkan unlock tampil dengan hitungan mundur
-  const isCooldownActive = lockUntil ? Date.now() < lockUntil : false;
-  const cooldownRemaining = isCooldownActive ? Math.ceil((lockUntil! - Date.now()) / 1000) : 0;
-
-  const handlePinInput = (value: string) => {
-    setError(null);
-    if (value.length <= PIN_LENGTH) {
-      setPinInput(value);
-    }
-  };
-
-  const handleKeypadPress = (key: string) => {
-    if (key === 'backspace') {
-      setPinInput((prev) => prev.slice(0, -1));
-    } else if (pinInput.length < PIN_LENGTH) {
-      setPinInput((prev) => prev + key);
-    }
-  };
-
-  const handleUnlock = async () => {
-    if (isCooldownActive) {
-      setError(`Tunggu ${cooldownRemaining} detik sebelum mencoba lagi`);
-      return;
-    }
-
-    // Coba biometrik dulu jika aktif & tersedia
-    if (biometricEnabled && biometricAvailable) {
-      const ok = await authenticateBiometric();
-      if (ok) {
-        setLock(false);
-        setShowUnlock(false);
-        resetAttempts();
         return;
       }
-      // Biometrik gagal → fallback PIN
-    }
 
-    if (!pinHash || !pinSalt) {
-      setError('PIN belum diatur');
-      return;
-    }
+      if (nextState === 'active') {
+        const since = backgroundAt.current;
+        backgroundAt.current = null;
+        if (lockTimer.current) {
+          clearTimeout(lockTimer.current);
+          lockTimer.current = null;
+        }
+        // Timer JS bisa tertunda saat app di background: cek durasi sebenarnya.
+        if (since !== null && Date.now() - since >= AUTO_LOCK_MS) {
+          const store = useSecurityStore.getState();
+          if (store.isOnboardingComplete) store.setLock(true);
+        }
+      }
+    });
 
-    const store = useSecurityStore.getState();
-    const ok = await store.verifyPin(pinInput);
-    if (ok) {
-      setLock(false);
-      setShowUnlock(false);
+    return () => {
+      subscription.remove();
+      if (lockTimer.current) {
+        clearTimeout(lockTimer.current);
+        lockTimer.current = null;
+      }
+    };
+  }, []);
+
+  const isCooldownActive = lockUntil !== null && now < lockUntil;
+  const cooldownRemaining = isCooldownActive
+    ? Math.ceil((lockUntil! - now) / 1000)
+    : 0;
+
+  // Tick hitungan mundur cooldown, lalu bersihkan attempt setelah cooldown habis.
+  useEffect(() => {
+    if (lockUntil === null || Date.now() >= lockUntil) return;
+    setNow(Date.now());
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [lockUntil, now]);
+
+  useEffect(() => {
+    if (lockUntil !== null && now >= lockUntil) {
       resetAttempts();
-      setPinInput('');
-    } else {
-      store.incrementAttempts();
-      setPinInput('');
-      setError('PIN salah');
+      setError(null);
     }
-  };
+  }, [lockUntil, now, resetAttempts]);
 
   const authenticateBiometric = async (): Promise<boolean> => {
     setBiometricLoading(true);
@@ -260,143 +264,263 @@ export const SecurityGate: React.FC<SecurityGateProps> = ({ children, theme }) =
     }
   };
 
-  const handleCreatePin = async () => {
-    const currentPin = onboardingStep === 'create' ? pinInput : confirmPin;
-    if (currentPin.length !== PIN_LENGTH) {
+  const handleBiometricUnlock = async () => {
+    const ok = await authenticateBiometric();
+    if (ok) {
+      setLock(false);
+      resetAttempts();
+      setPinInput('');
+      setError(null);
+    } else {
+      setError('Biometrik gagal. Gunakan PIN.');
+    }
+  };
+
+  const handleUnlock = async () => {
+    const coolingDown = lockUntil !== null && Date.now() < lockUntil;
+    if (coolingDown) {
+      const remaining = Math.ceil((lockUntil! - Date.now()) / 1000);
+      setError(`Tunggu ${remaining} detik sebelum mencoba lagi`);
+      return;
+    }
+    if (pinInput.length !== PIN_LENGTH) {
       setError('PIN harus 6 digit');
       return;
     }
+    if (!pinHash || !pinSalt) {
+      setError('PIN belum diatur');
+      return;
+    }
+    const store = useSecurityStore.getState();
+    const ok = await store.verifyPin(pinInput);
+    if (ok) {
+      setLock(false);
+      resetAttempts();
+      setPinInput('');
+      setError(null);
+    } else {
+      store.incrementAttempts();
+      setPinInput('');
+      setError('PIN salah');
+    }
+  };
+
+  const resetPinSetup = () => {
+    setPinInput('');
+    setFirstPin('');
+    setConfirmPin('');
+    setOnboardingStep('create');
+  };
+
+  const handleCreatePin = async () => {
     if (onboardingStep === 'create') {
-      setConfirmPin(currentPin);
+      if (pinInput.length !== PIN_LENGTH) {
+        setError('PIN harus 6 digit');
+        return;
+      }
+      setFirstPin(pinInput);
       setPinInput('');
       setOnboardingStep('confirm');
       setError(null);
       return;
     }
-    // Konfirmasi
-    if (currentPin !== confirmPin) {
-      setError('PIN tidak cocok');
-      setPinInput('');
+
+    // Konfirmasi: bandingkan dengan PIN pertama, bukan dengan dirinya sendiri.
+    if (confirmPin.length !== PIN_LENGTH) {
+      setError('PIN harus 6 digit');
       return;
     }
-    const salt = await useSecurityStore.getState().generateSalt();
-    const hash = await useSecurityStore.getState().hashPin(currentPin, salt);
-    setPin(hash, salt);
-    setOnboardingComplete(true);
-    setShowOnboarding(false);
-    setPinInput('');
-    setConfirmPin('');
-    setOnboardingStep('create');
-    setError(null);
+    if (confirmPin !== firstPin) {
+      resetPinSetup();
+      setError('PIN tidak cocok. Ulangi dari awal.');
+      return;
+    }
+
+    try {
+      const salt = await useSecurityStore.getState().generateSalt();
+      const hash = await useSecurityStore.getState().hashPin(confirmPin, salt);
+      await setPin(hash, salt);
+      setOnboardingComplete(true);
+      setPinSetup(false);
+      setLock(false);
+      resetPinSetup();
+      setError(null);
+    } catch {
+      setError('Gagal menyimpan PIN. Coba lagi.');
+    }
   };
 
   const handleForgotPin = async () => {
-    if (biometricEnabled && biometricAvailable) {
-      setForgotMode('biometric');
+    if (biometricAvailable) {
       const ok = await authenticateBiometric();
       if (ok) {
-        setForgotMode('none');
-        // Biometrik berhasil → buat PIN baru
-        setShowOnboarding(true);
-        setOnboardingStep('create');
+        // Biometrik berhasil → buat PIN baru.
+        resetPinSetup();
+        setPinSetup(true);
         setLock(false);
-        setShowUnlock(false);
-      } else {
-        setError('Biometrik gagal');
-        setForgotMode('none');
+        setError(null);
+        return;
       }
-    } else {
-      setForgotMode('reset');
+      setError('Biometrik gagal. Reset total diperlukan.');
     }
+    setResetInput('');
+    setForgotMode('reset');
   };
 
-  const handleResetConfirm = () => {
-    if (resetInput !== 'HAPUS') {
+  const handleResetConfirm = async () => {
+    if (resetInput.trim().toUpperCase() !== 'HAPUS') {
       setError('Ketik "HAPUS" untuk mengonfirmasi reset total');
       return;
     }
-    // Reset total: hapus PIN & data, kembali ke onboarding
-    useSecurityStore.getState().clearAll();
+    await clearAll();
     setForgotMode('none');
     setResetInput('');
-    setOnboardingComplete(false);
-    setShowOnboarding(true);
-    setOnboardingStep('create');
+    resetPinSetup();
+    setPinSetup(true);
     setLock(false);
-    setShowUnlock(false);
     setError(null);
   };
 
-  // Render PIN input (6 kotak indikator)
-  const renderPinIndicator = (value: string) => {
-    const chars = value.padEnd(PIN_LENGTH, '').split('').slice(0, PIN_LENGTH);
-    return (
-      <View style={styles.pinRow}>
-        {chars.map((_ch, i) => (
+  const renderPinIndicator = (value: string) => (
+    <View style={styles.pinRow}>
+      {Array.from({ length: PIN_LENGTH }).map((_, i) => {
+        const filled = i < value.length;
+        return (
           <View
             key={i}
             style={[
               styles.pinBox,
-              i < value.length ? styles.pinBoxFilled : styles.pinBoxEmpty,
+              {
+                borderColor: filled ? tokens.accent : tokens.border,
+                backgroundColor: filled ? tokens.accent : tokens.card,
+              },
             ]}
           >
-            {i < value.length ? '•' : null}
+            {filled ? <Text style={styles.pinDot}>•</Text> : null}
           </View>
-        ))}
-      </View>
-    );
+        );
+      })}
+    </View>
+  );
+
+  const renderKeypad = (
+    value: string,
+    setValue: React.Dispatch<React.SetStateAction<string>>,
+    disabled = false
+  ) => {
+    const handleKeyPress = (key: string) => {
+      setError(null);
+      if (key === 'backspace') {
+        setValue((prev) => prev.slice(0, -1));
+      } else if (value.length < PIN_LENGTH) {
+        setValue((prev) => prev + key);
+      }
+    };
+    return <NumericKeypad onPressKey={handleKeyPress} disabled={disabled} tokens={tokens} />;
   };
 
   const renderGate = () => {
-    if (showOnboarding) {
+    if (pinSetup) {
       const currentValue = onboardingStep === 'create' ? pinInput : confirmPin;
-      const handleKeyPress = (key: string) => {
-        if (key === 'backspace') {
-          if (onboardingStep === 'create') {
-            setPinInput((prev) => prev.slice(0, -1));
-          } else {
-            setConfirmPin((prev) => prev.slice(0, -1));
-          }
-        } else if (currentValue.length < PIN_LENGTH) {
-          if (onboardingStep === 'create') {
-            setPinInput((prev) => prev + key);
-          } else {
-            setConfirmPin((prev) => prev + key);
-          }
-        }
-      };
+      const setCurrentValue = onboardingStep === 'create' ? setPinInput : setConfirmPin;
 
       return (
         <View style={styles.gateContainer}>
-          <Text style={styles.gateTitle}>
+          <Text style={[styles.gateTitle, { color: tokens.text }]}>
             {onboardingStep === 'create' ? 'Buat PIN wall-et' : 'Konfirmasi PIN'}
           </Text>
-          <Text style={styles.gateSub}>
+          <Text style={[styles.gateSub, { color: tokens.textMuted }]}>
             {onboardingStep === 'create'
               ? 'Buat PIN 6 digit untuk mengamankan aplikasi'
               : 'Masukkan ulang PIN untuk konfirmasi'}
           </Text>
           {renderPinIndicator(currentValue)}
           {error && <Text style={styles.errorText}>{error}</Text>}
-          <NumericKeypad value={currentValue} onPressKey={handleKeyPress} />
-          <TouchableOpacity style={styles.gateButton} onPress={handleCreatePin}>
+          {renderKeypad(currentValue, setCurrentValue)}
+          <TouchableOpacity
+            style={[styles.gateButton, { backgroundColor: tokens.accent }]}
+            onPress={handleCreatePin}
+          >
             <Text style={styles.gateButtonText}>
               {onboardingStep === 'create' ? 'Buat PIN' : 'Konfirmasi'}
             </Text>
+          </TouchableOpacity>
+
+          {biometricAvailable && (
+            <View style={styles.biometricRow}>
+              <MaterialCommunityIcons name="fingerprint" size={22} color={tokens.text} />
+              <Text style={[styles.biometricRowText, { color: tokens.text }]}>
+                Aktifkan biometrik
+              </Text>
+              <Switch
+                value={biometricEnabled}
+                onValueChange={setBiometric}
+                trackColor={{ false: tokens.border, true: tokens.accent }}
+                thumbColor={biometricEnabled ? tokens.accent : tokens.textMuted}
+              />
+            </View>
+          )}
+        </View>
+      );
+    }
+
+    if (forgotMode === 'reset') {
+      return (
+        <View style={styles.gateContainer}>
+          <Text style={[styles.gateTitle, { color: tokens.text }]}>Reset total</Text>
+          <Text style={[styles.gateSub, { color: tokens.textMuted }]}>
+            Semua data dan PIN akan dihapus. Ketik HAPUS untuk melanjutkan.
+          </Text>
+          <TextInput
+            style={[
+              styles.resetInput,
+              { color: tokens.text, borderColor: tokens.border, backgroundColor: tokens.card },
+            ]}
+            value={resetInput}
+            onChangeText={(text) => {
+              setResetInput(text);
+              setError(null);
+            }}
+            placeholder="HAPUS"
+            placeholderTextColor={tokens.textMuted}
+            autoCapitalize="characters"
+            autoCorrect={false}
+          />
+          {error && <Text style={styles.errorText}>{error}</Text>}
+          <TouchableOpacity
+            style={[styles.gateButton, { backgroundColor: tokens.error }]}
+            onPress={handleResetConfirm}
+          >
+            <Text style={styles.gateButtonText}>Reset total</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.forgotButton}
+            onPress={() => {
+              setForgotMode('none');
+              setResetInput('');
+              setError(null);
+            }}
+          >
+            <Text style={[styles.forgotText, { color: tokens.accent }]}>Batal</Text>
           </TouchableOpacity>
         </View>
       );
     }
 
-    if (showUnlock) {
+    if (isLocked) {
       return (
         <View style={styles.gateContainer}>
-          <Text style={styles.gateTitle}>Masuk ke wall-et</Text>
-          <Text style={styles.gateSub}>Verifikasi identitas Anda</Text>
+          <Text style={[styles.gateTitle, { color: tokens.text }]}>Masuk ke wall-et</Text>
+          <Text style={[styles.gateSub, { color: tokens.textMuted }]}>
+            Verifikasi identitas Anda
+          </Text>
           {biometricEnabled && biometricAvailable && !isCooldownActive && (
             <TouchableOpacity
-              style={styles.biometricButton}
-              onPress={handleUnlock}
+              style={[
+                styles.biometricButton,
+                { backgroundColor: tokens.card, borderColor: tokens.border },
+              ]}
+              onPress={handleBiometricUnlock}
               disabled={biometricLoading}
             >
               <MaterialCommunityIcons
@@ -404,24 +528,33 @@ export const SecurityGate: React.FC<SecurityGateProps> = ({ children, theme }) =
                 size={24}
                 color={tokens.text}
               />
-              <Text style={styles.biometricText}>
+              <Text style={[styles.biometricText, { color: tokens.text }]}>
                 {biometricLoading ? 'Memverifikasi...' : 'Gunakan Biometrik'}
               </Text>
             </TouchableOpacity>
           )}
           {renderPinIndicator(pinInput)}
-          <NumericKeypad value={pinInput} onPressKey={handleKeypadPress} disabled={isCooldownActive} />
-          {isCooldownActive && (
+          {renderKeypad(pinInput, setPinInput, isCooldownActive)}
+          {isCooldownActive ? (
             <Text style={styles.cooldownText}>
-              Terlalu banyak percobaan gagal. Coba lagi dalam {cooldownRemaining} detik.
+              Terlalu banyak percobaan gagal ({MAX_PIN_ATTEMPTS}x). Coba lagi dalam{' '}
+              {cooldownRemaining} detik.
             </Text>
+          ) : (
+            error && <Text style={styles.errorText}>{error}</Text>
           )}
-          {!isCooldownActive && error && <Text style={styles.errorText}>{error}</Text>}
-          <TouchableOpacity style={styles.forgotButton} onPress={handleForgotPin}>
-            <Text style={styles.forgotText}>Lupa PIN?</Text>
+          <TouchableOpacity
+            style={styles.forgotButton}
+            onPress={handleForgotPin}
+            disabled={biometricLoading}
+          >
+            <Text style={[styles.forgotText, { color: tokens.accent }]}>Lupa PIN?</Text>
           </TouchableOpacity>
           {!isCooldownActive && (
-            <TouchableOpacity style={styles.gateButton} onPress={handleUnlock}>
+            <TouchableOpacity
+              style={[styles.gateButton, { backgroundColor: tokens.accent }]}
+              onPress={handleUnlock}
+            >
               <Text style={styles.gateButtonText}>Masuk dengan PIN</Text>
             </TouchableOpacity>
           )}
@@ -432,10 +565,26 @@ export const SecurityGate: React.FC<SecurityGateProps> = ({ children, theme }) =
     return null;
   };
 
-  // Render children (navigator) jika tidak terkunci dan tidak onboarding
+  // Render children (navigator) hanya jika sudah siap, tidak onboarding,
+  // tidak membuat PIN baru, dan tidak terkunci.
+  // coldStartLockPending mencegah satu frame konten bocor sebelum lock aktif.
+  const coldStartLockPending =
+    isReady &&
+    !coldStartHandled.current &&
+    isOnboardingComplete &&
+    pinHash !== null &&
+    pinSalt !== null;
+  const showLoading = !isReady || coldStartLockPending;
+  const showGate = showLoading || pinSetup || isLocked || !isOnboardingComplete;
+
   return (
     <View style={[styles.container, { backgroundColor: tokens.background }]}>
-      {(!isOnboardingComplete || isLocked) ? (
+      {showLoading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={tokens.accent} />
+          <Text style={[styles.loadingText, { color: tokens.textMuted }]}>Memuat wall-et...</Text>
+        </View>
+      ) : showGate ? (
         renderGate()
       ) : (
         <View style={styles.contentWrapper}>{children}</View>
@@ -454,6 +603,15 @@ const styles = StyleSheet.create({
   contentWrapper: {
     flex: 1,
   },
+  loadingContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+  },
+  loadingText: {
+    fontSize: 13,
+  },
   gateContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -462,13 +620,11 @@ const styles = StyleSheet.create({
   gateTitle: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#F8FAFC',
     textAlign: 'center',
     marginBottom: 8,
   },
   gateSub: {
     fontSize: 14,
-    color: '#94A3B8',
     textAlign: 'center',
     marginBottom: 24,
   },
@@ -486,13 +642,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  pinBoxFilled: {
-    borderColor: '#10B981',
-    backgroundColor: '#10B981',
-  },
-  pinBoxEmpty: {
-    borderColor: '#334155',
-    backgroundColor: '#131A2A',
+  pinDot: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: '700',
   },
   errorText: {
     color: '#F43F5E',
@@ -506,8 +659,17 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 16,
   },
+  resetInput: {
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 16,
+    textAlign: 'center',
+    letterSpacing: 2,
+    marginBottom: 16,
+  },
   gateButton: {
-    backgroundColor: '#10B981',
     paddingVertical: 14,
     borderRadius: 10,
     alignItems: 'center',
@@ -521,17 +683,26 @@ const styles = StyleSheet.create({
   biometricButton: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 8,
-    backgroundColor: '#131A2A',
     paddingVertical: 12,
     paddingHorizontal: 16,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#334155',
     marginBottom: 16,
   },
   biometricText: {
-    color: '#F8FAFC',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  biometricRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 24,
+  },
+  biometricRowText: {
+    flex: 1,
     fontSize: 14,
     fontWeight: '500',
   },
@@ -540,7 +711,6 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   forgotText: {
-    color: '#10B981',
     fontSize: 13,
     fontWeight: '500',
   },
@@ -559,7 +729,6 @@ const styles = StyleSheet.create({
     width: KEYPAD_SIZE,
     height: KEYPAD_SIZE,
     borderRadius: KEYPAD_SIZE / 2,
-    backgroundColor: '#131A2A',
     alignItems: 'center',
     justifyContent: 'center',
     marginHorizontal: 8,
@@ -570,7 +739,6 @@ const styles = StyleSheet.create({
   keypadKeyText: {
     fontSize: 22,
     fontWeight: '600',
-    color: '#F8FAFC',
   },
   overlay: {
     ...StyleSheet.absoluteFill,
