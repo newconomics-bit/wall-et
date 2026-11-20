@@ -36,7 +36,9 @@
 12. Kerjakan HANYA wave aktif sesuai ROADMAP.md. Dilarang lompat
     wave atau refactor di luar scope.
 13. Selesai menulis kode → wajib `npx tsc --noEmit` → 0 error →
-    baru commit. Format commit: "wave-N: <ringkasan>".
+    commit di branch kerja → push → buka PR ke main → laporkan
+    link PR + hash commit ke user. USER yang merge, bukan agent.
+    Format commit: "wave-N: <ringkasan>".
 14. Dilarang TODO/placeholder/fitur palsu. Semua acceptance
     criteria wave harus benar-benar berfungsi dan teruji.
 15. PRD.md = sumber kebenaran tunggal. Jika ada konflik atau
