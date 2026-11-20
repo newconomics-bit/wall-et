@@ -53,6 +53,7 @@ export const AppNavigator: React.FC<AppNavigatorProps> = ({
   return (
     <NavigationContainer>
       <Tab.Navigator
+        initialRouteName="Home"
         screenOptions={{
           tabBarShowLabel: true,
           headerShown: false,
@@ -67,7 +68,6 @@ export const AppNavigator: React.FC<AppNavigatorProps> = ({
         <Tab.Screen
           name="Home"
           component={HomeTab}
-          initial
           options={{
             tabBarLabel: 'Home',
             tabBarIcon: ({ color }: { color: string }) => (

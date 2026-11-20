@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View, AppState } from 'react-native';
 
-import { SecurityGate } from '@/components/security/SecurityGate';
+import { SecurityGate, PrivacyOverlay } from '@/components/security/SecurityGate';
 import { AppNavigator } from '@/navigation/AppNavigator';
 import { useSecurityStore } from '@/store/useSecurityStore';
 import { getTokens, type ThemeName } from '@/theme/tokens';
@@ -13,25 +13,42 @@ export default function App() {
   const {
     isBalanceHidden,
     toggleBalanceHidden,
+    isLocked,
+    isOnboardingComplete,
   } = useSecurityStore();
 
   const [theme, setTheme] = useState<ThemeName>('dark');
   const [showSettings, setShowSettings] = useState(false);
+  const [appState, setAppState] = useState(AppState.currentState);
 
   const toggleTheme = () => {
     setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
   };
 
   // Inisialisasi security (ambil PIN hash/salt dari SecureStore)
-  React.useEffect(() => {
+  useEffect(() => {
     initializeSecurity();
   }, []);
+
+  // AppState listener untuk privacy overlay - harus sinkron di root level
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      setAppState(nextState);
+    });
+    return () => subscription.remove();
+  }, []);
+
+  // Privacy overlay visible saat background atau inactive (untuk recent apps snapshot)
+  const showPrivacyOverlay = appState === 'background' || appState === 'inactive';
 
   const tokens = getTokens(theme);
 
   return (
     <View style={[styles.root, { backgroundColor: tokens.background }]}>
       <StatusBar style="auto" />
+
+      {/* Privacy Overlay di level ROOT - di atas SEMUA konten termasuk modal */}
+      <PrivacyOverlay visible={showPrivacyOverlay} theme={theme} />
 
       {showSettings ? (
         <View style={styles.content}>
