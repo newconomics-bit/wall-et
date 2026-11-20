@@ -1,0 +1,43 @@
+# .kilocoderules — wall-et (PERMANEN, berlaku semua wave)
+
+## IDENTITAS & STACK
+1. Nama aplikasi wajib "wall-et" (huruf kecil konsisten).
+2. DILARANG expo-router. Wajib @react-navigation/native +
+   @react-navigation/bottom-tabs.
+3. Library baru wajib `npx expo install <pkg>`.
+   Pengecualian (via npm): react-native-android-notification-listener.
+4. 100% offline: tanpa backend, tanpa tracking/analytics, tanpa
+   network call. Aplikasi wajib berfungsi penuh dalam mode pesawat.
+
+## UANG & DATA
+5. Semua nominal = integer Rupiah (tanpa float/desimal).
+   Display: "Rp 50.000" (pemisah ribuan id-ID).
+6. Semua tampilan nominal wajib fontVariant: ['tabular-nums'] dan
+   patuh isBalanceHidden → tampilkan "Rp ••••••".
+7. Tipe transaksi (8): expense | income | transfer | loan_out |
+   loan_repay | debt_in | debt_repay | adjustment.
+   Saldo dompet SELALU diturunkan atomik dari transaksi.
+   DILARANG menyimpan/mengubah field saldo secara manual.
+8. adminFee (transfer) & feeAmount (debt_repay) = pengeluaran
+   kategori "Biaya Admin" di analitik, BUKAN budget konsumsi.
+   Principal transfer/hutang/piutang/adjustment TIDAK PERNAH
+   dihitung sebagai pemasukan/pengeluaran.
+9. Guard pembagian nol: pemasukan 0 → Savings Rate "—";
+   sisa hari siklus ≤ 0 → clamp ke 1.
+
+## KEAMANAN & PRIVASI
+10. PIN: hash SHA-256 + salt (expo-crypto) di expo-secure-store,
+    JANGAN plaintext. Cooldown 60 detik setelah 5x gagal.
+11. Notification listener: strict whitelist package + zero-retention
+    filter sesuai PRD §7. Data non-whitelist/sensitif tidak boleh
+    disimpan, di-log, atau masuk state — langsung buang.
+
+## WORKFLOW
+12. Kerjakan HANYA wave aktif sesuai ROADMAP.md. Dilarang lompat
+    wave atau refactor di luar scope.
+13. Selesai menulis kode → wajib `npx tsc --noEmit` → 0 error →
+    baru commit. Format commit: "wave-N: <ringkasan>".
+14. Dilarang TODO/placeholder/fitur palsu. Semua acceptance
+    criteria wave harus benar-benar berfungsi dan teruji.
+15. PRD.md = sumber kebenaran tunggal. Jika ada konflik atau
+    ambiguitas: BERHENTI dan tanya user, JANGAN mengarang sendiri.
