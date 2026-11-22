@@ -5,7 +5,7 @@
  */
 
 import React, { useState } from 'react';
-import { StyleSheet, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -15,6 +15,7 @@ import { TransaksiScreen } from '@/screens/TransaksiScreen';
 import { BudgetScreen } from '@/screens/BudgetScreen';
 import { AnalitikScreen } from '@/screens/AnalitikScreen';
 import { SettingsScreen } from '@/screens/SettingsScreen';
+import { NeuButton } from '@/components/ui/Neumorphic';
 import { getTokens, type ThemeName } from '@/theme/tokens';
 
 const Tab = createBottomTabNavigator();
@@ -56,11 +57,19 @@ export const AppNavigator: React.FC<AppNavigatorProps> = ({
             tabBarShowLabel: true,
             headerShown: false,
             tabBarStyle: {
-              backgroundColor: tokens.card,
+              backgroundColor: tokens.neuSurface,
+              // Garis + bayangan ke atas supaya tab bar terpisah dari konten.
               borderTopWidth: 1,
-              borderTopColor: tokens.border,
+              borderTopColor: tokens.neuEdge,
               height: 74,
+              elevation: 18,
+              shadowColor: tokens.neuShadow,
+              shadowOffset: { width: 0, height: -4 },
+              shadowOpacity: 0.35,
+              shadowRadius: 12,
             },
+            tabBarActiveTintColor: tokens.accent,
+            tabBarInactiveTintColor: tokens.textMuted,
           }}
         >
           <Tab.Screen
@@ -107,14 +116,16 @@ export const AppNavigator: React.FC<AppNavigatorProps> = ({
       </NavigationContainer>
 
       {/* FAB bulat menonjol di tengah bawah */}
-      <TouchableOpacity
-        style={[styles.fab, { backgroundColor: tokens.accent }]}
+      <NeuButton
+        theme={theme}
+        radius={28}
+        style={styles.fab}
+        contentStyle={[styles.fabContent, { backgroundColor: tokens.accent }]}
         hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
-        accessibilityRole="button"
         accessibilityLabel="Tambah transaksi"
       >
-        <MaterialCommunityIcons name="plus" size={24} color="#FFFFFF" />
-      </TouchableOpacity>
+        <MaterialCommunityIcons name="plus" size={26} color="#FFFFFF" />
+      </NeuButton>
 
       {/* Settings diakses dari ikon header Home (PRD §3). */}
       {showSettings && (
@@ -141,16 +152,16 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 28,
     alignSelf: 'center',
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    justifyContent: 'center',
-    alignItems: 'center',
-    elevation: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
+    width: 58,
+    height: 58,
     zIndex: 100,
+    // Di atas elevation tab bar agar FAB tidak tertutup bayangan tab bar.
+    elevation: 24,
+  },
+  fabContent: {
+    width: 58,
+    height: 58,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });
