@@ -23,6 +23,7 @@ export const COLORS = {
     neuInset: '#0A0E17',
     neuHighlight: '#1F2B3F',
     neuShadow: '#04070D',
+    neuEdge: '#1E2A3C',
   },
   // Light
   light: {
@@ -34,11 +35,13 @@ export const COLORS = {
     textMuted: '#64748B',
     accent: '#059669',
     accentLight: '#34D399',
-    // Neumorphism
-    neuSurface: '#F4F7FB',
+    // Neumorphism: permukaan HARUS lebih terang dari background agar
+    // kartu terbaca menonjol, bukan cekung.
+    neuSurface: '#FFFFFF',
     neuInset: '#EDF2F8',
     neuHighlight: '#FFFFFF',
-    neuShadow: '#D2DBE7',
+    neuShadow: '#C9D5E4',
+    neuEdge: '#E1E8F1',
   },
 } as const;
 

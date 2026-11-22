@@ -58,9 +58,15 @@ export const AppNavigator: React.FC<AppNavigatorProps> = ({
             headerShown: false,
             tabBarStyle: {
               backgroundColor: tokens.neuSurface,
-              borderTopWidth: 0,
+              // Garis + bayangan ke atas supaya tab bar terpisah dari konten.
+              borderTopWidth: 1,
+              borderTopColor: tokens.neuEdge,
               height: 74,
-              elevation: 0,
+              elevation: 18,
+              shadowColor: tokens.neuShadow,
+              shadowOffset: { width: 0, height: -4 },
+              shadowOpacity: 0.35,
+              shadowRadius: 12,
             },
             tabBarActiveTintColor: tokens.accent,
             tabBarInactiveTintColor: tokens.textMuted,
@@ -149,6 +155,8 @@ const styles = StyleSheet.create({
     width: 58,
     height: 58,
     zIndex: 100,
+    // Di atas elevation tab bar agar FAB tidak tertutup bayangan tab bar.
+    elevation: 24,
   },
   fabContent: {
     width: 58,
