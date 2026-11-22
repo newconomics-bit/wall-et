@@ -1,10 +1,10 @@
 /**
  * Neumorphic primitives — wall-et
  *
- * React Native hanya mendukung satu shadow per View, jadi kedalaman
- * neumorphism dibuat dengan dua lapis: lapisan luar membawa bayangan gelap
- * (kanan-bawah) dan lapisan dalam membawa highlight (kiri-atas).
- * Varian `inset` meniru elemen yang ditekan/tenggelam dengan border bevel.
+ * React Native hanya mendukung satu shadow per View, jadi kedalaman dibuat
+ * dua lapis: lapisan luar membawa bayangan gelap ke kanan-bawah, lapisan
+ * dalam membawa highlight ke kiri-atas. Saat ditekan, bayangan dilepas dan
+ * diganti bevel gelap (kiri-atas) + terang (kanan-bawah) agar terbaca cekung.
  */
 
 import React from 'react';
@@ -18,73 +18,70 @@ import {
 
 import { getTokens, type ThemeName } from '@/theme/tokens';
 
-type BaseProps = {
+type NeuShadowArgs = {
+  shadowColor: string;
+  opacity: number;
+  offset: number;
+  blur: number;
+  elevation?: number;
+};
+
+const neuShadow = ({
+  shadowColor,
+  opacity,
+  offset,
+  blur,
+  elevation = 0,
+}: NeuShadowArgs): ViewStyle => ({
+  shadowColor,
+  shadowOffset: { width: offset, height: offset },
+  shadowOpacity: opacity,
+  shadowRadius: blur,
+  elevation,
+});
+
+type CommonProps = {
   theme: ThemeName;
   children?: React.ReactNode;
-  style?: StyleProp<ViewStyle>;
   contentStyle?: StyleProp<ViewStyle>;
   radius?: number;
 };
 
-type NeuSurfaceProps = BaseProps & {
-  inset?: boolean;
-};
-
-const raisedShadow = (
-  shadowColor: string,
-  opacity: number,
-  elevation = 0
-): ViewStyle => ({
-  shadowColor,
-  shadowOffset: { width: 6, height: 6 },
-  shadowOpacity: opacity,
-  shadowRadius: 14,
-  elevation,
-});
-
-export const NeuSurface: React.FC<NeuSurfaceProps> = ({
+export const NeuSurface: React.FC<CommonProps> = ({
   theme,
   children,
-  style,
   contentStyle,
   radius,
-  inset = false,
 }) => {
   const tokens = getTokens(theme);
   const r = { borderRadius: radius ?? tokens.neu.radius };
-
-  if (inset) {
-    return (
-      <View style={[styles.insetOuter, r, { backgroundColor: tokens.neuInset }, style]}>
-        <View
-          pointerEvents="none"
-          style={[styles.insetEdgeTL, r, { borderColor: tokens.neuShadow }]}
-        />
-        <View
-          pointerEvents="none"
-          style={[styles.insetEdgeBR, r, { borderColor: tokens.neuHighlight }]}
-        />
-        <View style={[styles.insetContent, contentStyle]}>{children}</View>
-      </View>
-    );
-  }
+  const surface = { backgroundColor: tokens.neuSurface };
 
   return (
     <View
       style={[
-        styles.raisedOuter,
         r,
-        raisedShadow(tokens.neuShadow, tokens.neu.shadowOpacity, tokens.neu.elevation),
-        { backgroundColor: tokens.neuSurface },
-        style,
+        neuShadow({
+          shadowColor: tokens.neuShadow,
+          opacity: tokens.neu.shadowOpacity,
+          offset: tokens.neu.offset,
+          blur: tokens.neu.blur,
+          elevation: tokens.neu.elevation,
+        }),
+        surface,
       ]}
     >
       <View
         style={[
-          styles.raisedInner,
+          styles.clip,
           r,
-          raisedShadow(tokens.neuHighlight, tokens.neu.highlightOpacity),
-          { backgroundColor: tokens.neuSurface },
+          neuShadow({
+            shadowColor: tokens.neuHighlight,
+            opacity: tokens.neu.highlightOpacity,
+            offset: -tokens.neu.offset,
+            blur: tokens.neu.blur,
+          }),
+          surface,
           contentStyle,
         ]}
       >
@@ -94,7 +91,8 @@ export const NeuSurface: React.FC<NeuSurfaceProps> = ({
   );
 };
 
-type NeuButtonProps = BaseProps & {
+type NeuButtonProps = CommonProps & {
+  style?: StyleProp<ViewStyle>;
   onPress?: () => void;
   disabled?: boolean;
   accessibilityLabel?: string;
@@ -114,6 +112,7 @@ export const NeuButton: React.FC<NeuButtonProps> = ({
 }) => {
   const tokens = getTokens(theme);
   const r = { borderRadius: radius ?? tokens.neu.radius };
+  const surface = { backgroundColor: tokens.neuSurface };
 
   return (
     <Pressable
@@ -124,14 +123,17 @@ export const NeuButton: React.FC<NeuButtonProps> = ({
       accessibilityState={{ disabled: !!disabled }}
       hitSlop={hitSlop}
       style={({ pressed }) => [
-        styles.raisedOuter,
         r,
         pressed
-          ? [styles.pressedOuter, { backgroundColor: tokens.neuInset }]
-          : [
-              raisedShadow(tokens.neuShadow, tokens.neu.shadowOpacity, tokens.neu.elevation),
-              { backgroundColor: tokens.neuSurface },
-            ],
+          ? styles.pressed
+          : neuShadow({
+              shadowColor: tokens.neuShadow,
+              opacity: tokens.neu.shadowOpacity,
+              offset: tokens.neu.offset,
+              blur: tokens.neu.blur,
+              elevation: tokens.neu.elevation,
+            }),
+        !pressed && surface,
         disabled && styles.disabled,
         style,
       ]}
@@ -139,17 +141,24 @@ export const NeuButton: React.FC<NeuButtonProps> = ({
       {({ pressed }) => (
         <View
           style={[
-            styles.raisedInner,
+            styles.clip,
             r,
-            pressed
-              ? { backgroundColor: tokens.neuInset }
-              : [
-                  raisedShadow(tokens.neuHighlight, tokens.neu.highlightOpacity),
-                  { backgroundColor: tokens.neuSurface },
-                ],
+            pressed ? { backgroundColor: tokens.neuInset } : surface,
             contentStyle,
           ]}
         >
+          {pressed && (
+            <>
+              <View
+                pointerEvents="none"
+                style={[styles.bevelEdge, r, styles.bevelTL, { borderColor: tokens.neuShadow }]}
+              />
+              <View
+                pointerEvents="none"
+                style={[styles.bevelEdge, r, styles.bevelBR, { borderColor: tokens.neuHighlight }]}
+              />
+            </>
+          )}
           {children}
         </View>
       )}
@@ -158,41 +167,32 @@ export const NeuButton: React.FC<NeuButtonProps> = ({
 };
 
 const styles = StyleSheet.create({
-  raisedOuter: {},
-  raisedInner: {
+  clip: {
     overflow: 'hidden',
   },
-  pressedOuter: {
+  pressed: {
+    backgroundColor: 'transparent',
     shadowOpacity: 0,
     elevation: 0,
   },
   disabled: {
     opacity: 0.45,
   },
-  insetOuter: {
-    overflow: 'hidden',
-  },
-  insetEdgeTL: {
+  bevelEdge: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
+  },
+  bevelTL: {
     borderTopWidth: 1.5,
     borderLeftWidth: 1.5,
-    opacity: 0.7,
-  },
-  insetEdgeBR: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    borderBottomWidth: 1.5,
-    borderRightWidth: 1.5,
     opacity: 0.8,
   },
-  insetContent: {
-    flexGrow: 1,
+  bevelBR: {
+    borderBottomWidth: 1.5,
+    borderRightWidth: 1.5,
+    opacity: 0.9,
   },
 });

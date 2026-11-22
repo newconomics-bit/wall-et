@@ -18,9 +18,9 @@ export const COLORS = {
     textMuted: '#94A3B8',
     accent: '#10B981',
     accentLight: '#34D399',
-    // Neumorphism
+    // Neumorphism: surface > background > inset (raised vs cekung)
     neuSurface: '#131A2A',
-    neuInset: '#0A0E17',
+    neuInset: '#05080F',
     neuHighlight: '#1F2B3F',
     neuShadow: '#04070D',
     neuEdge: '#1E2A3C',
@@ -38,7 +38,7 @@ export const COLORS = {
     // Neumorphism: permukaan HARUS lebih terang dari background agar
     // kartu terbaca menonjol, bukan cekung.
     neuSurface: '#FFFFFF',
-    neuInset: '#EDF2F8',
+    neuInset: '#E8EEF6',
     neuHighlight: '#FFFFFF',
     neuShadow: '#C9D5E4',
     neuEdge: '#E1E8F1',
@@ -81,8 +81,6 @@ export const TOKENS = {
   // Neumorphism geometry: offset & blur dipakai bersama komponen Neu*
   neu: {
     radius: 20,
-    radiusSm: 14,
-    radiusLg: 28,
     offset: 6,
     blur: 14,
     shadowOpacity: 0.55,
