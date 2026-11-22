@@ -22,6 +22,7 @@ import { BlurView } from 'expo-blur';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 import { useSecurityStore, MAX_PIN_ATTEMPTS } from '@/store/useSecurityStore';
+import { NeuButton } from '@/components/ui/Neumorphic';
 import { getTokens, type ThemeName, type ThemeTokens } from '@/theme/tokens';
 
 const PIN_LENGTH = 6;
@@ -68,7 +69,8 @@ const NumericKeypad: React.FC<{
   onPressKey: (key: string) => void;
   disabled?: boolean;
   tokens: ThemeTokens;
-}> = ({ onPressKey, disabled, tokens }) => {
+  theme: ThemeName;
+}> = ({ onPressKey, disabled, tokens, theme }) => {
   const keys = [
     ['1', '2', '3'],
     ['4', '5', '6'],
@@ -86,18 +88,15 @@ const NumericKeypad: React.FC<{
             }
             const isBackspace = key === 'backspace';
             return (
-              <TouchableOpacity
+              <NeuButton
                 key={keyIndex}
-                style={[
-                  styles.keypadKey,
-                  { backgroundColor: tokens.card },
-                  isBackspace && styles.keypadKeyBackspace,
-                ]}
+                theme={theme}
+                radius={KEYPAD_SIZE / 2}
+                style={styles.keypadKey}
+                contentStyle={styles.keypadKeyContent}
                 onPress={() => !disabled && onPressKey(key)}
                 disabled={disabled}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                activeOpacity={0.7}
-                accessibilityRole="button"
                 accessibilityLabel={isBackspace ? 'Hapus digit' : `Angka ${key}`}
               >
                 {isBackspace ? (
@@ -105,7 +104,7 @@ const NumericKeypad: React.FC<{
                 ) : (
                   <Text style={[styles.keypadKeyText, { color: tokens.text }]}>{key}</Text>
                 )}
-              </TouchableOpacity>
+              </NeuButton>
             );
           })}
         </View>
@@ -390,10 +389,20 @@ export const SecurityGate: React.FC<SecurityGateProps> = ({ children, theme }) =
             key={i}
             style={[
               styles.pinBox,
-              {
-                borderColor: filled ? tokens.accent : tokens.border,
-                backgroundColor: filled ? tokens.accent : tokens.card,
-              },
+              filled
+                ? {
+                    borderColor: tokens.accent,
+                    backgroundColor: tokens.accent,
+                    shadowColor: tokens.accent,
+                    shadowOffset: { width: 0, height: 3 },
+                    shadowOpacity: 0.45,
+                    shadowRadius: 8,
+                    elevation: 4,
+                  }
+                : {
+                    borderColor: tokens.neuShadow,
+                    backgroundColor: tokens.neuInset,
+                  },
             ]}
           >
             {filled ? <Text style={styles.pinDot}>•</Text> : null}
@@ -416,7 +425,14 @@ export const SecurityGate: React.FC<SecurityGateProps> = ({ children, theme }) =
         setValue((prev) => prev + key);
       }
     };
-    return <NumericKeypad onPressKey={handleKeyPress} disabled={disabled} tokens={tokens} />;
+    return (
+      <NumericKeypad
+        onPressKey={handleKeyPress}
+        disabled={disabled}
+        tokens={tokens}
+        theme={theme}
+      />
+    );
   };
 
   const renderGate = () => {
@@ -437,14 +453,18 @@ export const SecurityGate: React.FC<SecurityGateProps> = ({ children, theme }) =
           {renderPinIndicator(currentValue)}
           {error && <Text style={styles.errorText}>{error}</Text>}
           {renderKeypad(currentValue, setCurrentValue)}
-          <TouchableOpacity
-            style={[styles.gateButton, { backgroundColor: tokens.accent }]}
+          <NeuButton
+            theme={theme}
+            radius={16}
+            style={styles.gateButton}
+            contentStyle={[styles.gateButtonContent, { backgroundColor: tokens.accent }]}
             onPress={handleCreatePin}
+            accessibilityLabel={onboardingStep === 'create' ? 'Buat PIN' : 'Konfirmasi PIN'}
           >
             <Text style={styles.gateButtonText}>
               {onboardingStep === 'create' ? 'Buat PIN' : 'Konfirmasi'}
             </Text>
-          </TouchableOpacity>
+          </NeuButton>
 
           {biometricAvailable && (
             <View style={styles.biometricRow}>
@@ -474,7 +494,11 @@ export const SecurityGate: React.FC<SecurityGateProps> = ({ children, theme }) =
           <TextInput
             style={[
               styles.resetInput,
-              { color: tokens.text, borderColor: tokens.border, backgroundColor: tokens.card },
+              {
+                color: tokens.text,
+                borderColor: tokens.neuShadow,
+                backgroundColor: tokens.neuInset,
+              },
             ]}
             value={resetInput}
             onChangeText={(text) => {
@@ -487,12 +511,16 @@ export const SecurityGate: React.FC<SecurityGateProps> = ({ children, theme }) =
             autoCorrect={false}
           />
           {error && <Text style={styles.errorText}>{error}</Text>}
-          <TouchableOpacity
-            style={[styles.gateButton, { backgroundColor: tokens.error }]}
+          <NeuButton
+            theme={theme}
+            radius={16}
+            style={styles.gateButton}
+            contentStyle={[styles.gateButtonContent, { backgroundColor: tokens.error }]}
             onPress={handleResetConfirm}
+            accessibilityLabel="Reset total"
           >
             <Text style={styles.gateButtonText}>Reset total</Text>
-          </TouchableOpacity>
+          </NeuButton>
           <TouchableOpacity
             style={styles.forgotButton}
             onPress={() => {
@@ -515,13 +543,14 @@ export const SecurityGate: React.FC<SecurityGateProps> = ({ children, theme }) =
             Verifikasi identitas Anda
           </Text>
           {biometricEnabled && biometricAvailable && !isCooldownActive && (
-            <TouchableOpacity
-              style={[
-                styles.biometricButton,
-                { backgroundColor: tokens.card, borderColor: tokens.border },
-              ]}
+            <NeuButton
+              theme={theme}
+              radius={16}
+              style={styles.biometricButton}
+              contentStyle={styles.biometricButtonContent}
               onPress={handleBiometricUnlock}
               disabled={biometricLoading}
+              accessibilityLabel="Gunakan biometrik"
             >
               <MaterialCommunityIcons
                 name={biometricLoading ? 'circle-outline' : 'fingerprint'}
@@ -531,7 +560,7 @@ export const SecurityGate: React.FC<SecurityGateProps> = ({ children, theme }) =
               <Text style={[styles.biometricText, { color: tokens.text }]}>
                 {biometricLoading ? 'Memverifikasi...' : 'Gunakan Biometrik'}
               </Text>
-            </TouchableOpacity>
+            </NeuButton>
           )}
           {renderPinIndicator(pinInput)}
           {renderKeypad(pinInput, setPinInput, isCooldownActive)}
@@ -551,12 +580,16 @@ export const SecurityGate: React.FC<SecurityGateProps> = ({ children, theme }) =
             <Text style={[styles.forgotText, { color: tokens.accent }]}>Lupa PIN?</Text>
           </TouchableOpacity>
           {!isCooldownActive && (
-            <TouchableOpacity
-              style={[styles.gateButton, { backgroundColor: tokens.accent }]}
+            <NeuButton
+              theme={theme}
+              radius={16}
+              style={styles.gateButton}
+              contentStyle={[styles.gateButtonContent, { backgroundColor: tokens.accent }]}
               onPress={handleUnlock}
+              accessibilityLabel="Masuk dengan PIN"
             >
               <Text style={styles.gateButtonText}>Masuk dengan PIN</Text>
-            </TouchableOpacity>
+            </NeuButton>
           )}
         </View>
       );
@@ -637,8 +670,8 @@ const styles = StyleSheet.create({
   pinBox: {
     width: 44,
     height: 44,
-    borderRadius: 10,
-    borderWidth: 1,
+    borderRadius: 12,
+    borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -670,10 +703,11 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   gateButton: {
-    paddingVertical: 14,
-    borderRadius: 10,
-    alignItems: 'center',
     marginTop: 16,
+  },
+  gateButtonContent: {
+    paddingVertical: 15,
+    alignItems: 'center',
   },
   gateButtonText: {
     color: '#FFFFFF',
@@ -681,15 +715,15 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   biometricButton: {
+    marginBottom: 16,
+  },
+  biometricButtonContent: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    paddingVertical: 12,
+    paddingVertical: 13,
     paddingHorizontal: 16,
-    borderRadius: 10,
-    borderWidth: 1,
-    marginBottom: 16,
   },
   biometricText: {
     fontSize: 14,
@@ -728,13 +762,13 @@ const styles = StyleSheet.create({
   keypadKey: {
     width: KEYPAD_SIZE,
     height: KEYPAD_SIZE,
-    borderRadius: KEYPAD_SIZE / 2,
-    alignItems: 'center',
-    justifyContent: 'center',
     marginHorizontal: 8,
   },
-  keypadKeyBackspace: {
-    backgroundColor: 'transparent',
+  keypadKeyContent: {
+    width: KEYPAD_SIZE,
+    height: KEYPAD_SIZE,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   keypadKeyText: {
     fontSize: 22,

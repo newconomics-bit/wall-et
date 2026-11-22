@@ -1,6 +1,8 @@
 /**
  * Design System Tokens — wall-et
  * PRD §3: Dark (default) & Light theme + semantik warna
+ * Neumorphism: permukaan menyatu dengan background, kedalaman dari
+ * dual-shadow (highlight terang + bayangan gelap).
  */
 
 export type ThemeName = 'dark' | 'light';
@@ -16,6 +18,11 @@ export const COLORS = {
     textMuted: '#94A3B8',
     accent: '#10B981',
     accentLight: '#34D399',
+    // Neumorphism
+    neuSurface: '#131A2A',
+    neuInset: '#0A0E17',
+    neuHighlight: '#1F2B3F',
+    neuShadow: '#04070D',
   },
   // Light
   light: {
@@ -27,6 +34,11 @@ export const COLORS = {
     textMuted: '#64748B',
     accent: '#059669',
     accentLight: '#34D399',
+    // Neumorphism
+    neuSurface: '#F4F7FB',
+    neuInset: '#EDF2F8',
+    neuHighlight: '#FFFFFF',
+    neuShadow: '#D2DBE7',
   },
 } as const;
 
@@ -62,6 +74,17 @@ export const TOKENS = {
     shadowOpacity: 0.1,
     shadowRadius: 6,
     elevation: 3,
+  },
+  // Neumorphism geometry: offset & blur dipakai bersama komponen Neu*
+  neu: {
+    radius: 20,
+    radiusSm: 14,
+    radiusLg: 28,
+    offset: 6,
+    blur: 14,
+    shadowOpacity: 0.55,
+    highlightOpacity: 0.9,
+    elevation: 6,
   },
 } as const;
 
